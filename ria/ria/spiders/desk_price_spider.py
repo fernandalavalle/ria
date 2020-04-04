@@ -1,10 +1,9 @@
 import scrapy
+import json
 
+ERROR_FILE = "errors.txt"
 
-headers = ["country", "city", "state", "studio name", "address", "joined", 
-            "private office (day)", "private office (week)", "private office (month)", "private office (year)",
-            "dedicated desk (day)", "dedicated desk (week)", "dedicated desk (month)", "dedicated desk  (year)", 
-            "hot desk (day)", "hot desk  (week)", "hot desk (month)", "hot desk (year)"]
+headers = ["country", "city", "state", "name", "address", "joined", "type of office", "price", "time period"]
 
 class DeskPriceSpider(scrapy.Spider):
     name = "desk_price"
@@ -16,8 +15,37 @@ class DeskPriceSpider(scrapy.Spider):
         for url in urls:
             yield scrapy.Request(url=url, callback=self.parse)
 
+    def get_text(self, selector_string): 
+        if not selector_string: 
+            return selector_string
+        if "<" in selector_string: 
+            open_tag_right_index = selector_string.index(">")
+            close_tag_left_index = selector_string.index("</")
+            return selector_string[open_tag_right_index+1:close_tag_left_index]
+
+    def extract_price(self, json_string):
+        parsed = json.loads(json_string)
+        return parsed["price"]
+    
+    def handle_one_section(self, section_string): 
+        type_of_price=self.get_text(section_string.xpath('.//h4').get())
+        time_periods=[self.get_text(x) for x in section_string.xpath('.//option[@data-details]').getall()]
+        prices=[ self.extract_price(x) for x in section_string.xpath('.//option/@data-details').getall()]
+        no_price = section_string.xpath('.//div/@class="empty-message"').getall()
+        
+        return {
+            "type_of_price" : type_of_price, 
+            "time_periods" : time_periods, 
+            "prices" : prices
+        }
+
+
+    # Returns: (List of dictionary rows, errors)
     def parse(self, response):
-        row = []
+        output_rows = []
+        errors = []
+
+        row = {}
         page = response.url.split("/")
         print('\n')
         print('\n')        
@@ -25,181 +53,58 @@ class DeskPriceSpider(scrapy.Spider):
         print('\n')
         print('\n')
 
-        row.append(page[3])
-        row.append(page[5])
-        row.append(page[4])
-        row.append(page[6])
+        
+        row["name"] = page[-1]
+        row["city"] = page[-2]
 
-        print(row[0])
-        print(row[1])
-        print(row[2])
-        print(row[3])
-        print('\n')
-        print('\n')
+        if ("united-states" in page): 
+            row["country"] = page[-4]
+            row["state"] = page[-3]
+        else: 
+            row["country"] = page[-3]
+            row["state"] = ""
+        
 
 
-        # Add address
+        # # Add address
         address = response.xpath('//div[@class="col-xs-12 pade_none muchroom_mail"]').getall()
-
-        print(len(address))
-        print(address)
-        print(type(address[0]))
         start=(address[0].index("/i> ")+4)
         end=address[0].index("</div>")
-        print('\n')
-        print('\n')
         address_only=address[0][start:end:]
-        print(address_only)
-        print('\n')
-        print('\n')
-        row.append(address_only)
-        print(row)
+        row["address"] = address_only
 
         # Add Join date
         joined = response.xpath('//div[@class="date_joined_rs"]').getall()
-        print('\n')
-        print('\n')
-        print(len(joined))
-        print(joined)
-
-        print(type(joined[0]))
         start=(joined[0].index("Joined ")+7)
         end=joined[0].index("</span>")
-        print('\n')
-        print('\n')
         joined_only=joined[0][start:end:]
-        print(joined_only)
-        print('\n')
-        print('\n')
-        row.append(joined_only)
-        print(row)
+        row["joined"] = joined_only
+   
+ 
+        sections=response.xpath('//div[@class="col-xs-12 pad_none pricing-section-space-outer-6-11-18"]')
 
-        # Prices
-        # "private office (day)", "private office (week)", "private office (month)", "private office (year)",
-        # "dedicated desk (day)", "dedicated desk (week)", "dedicated desk (month)", "dedicated desk  (year)", 
-        # "hot desk (day)", "hot desk  (week)", "hot desk (month)", "hot desk (year)"]
-        filename = 'prices-%s.html' % page[6]
-        sections = response.xpath('//div[@class="col-xs-12 pad_none pricing-section-space-outer-6-11-18"]').getall()
-        print('\n')
-        print('\n')
-        print(len(sections))
-        print(sections[0])
-        print('\n')
-        print('\n')
-        print(sections[1])
-        print('\n')
-        print('\n')
-        print(sections[2])
-        print('\n')
-        print('\n')
+        prices = []
+        for section in sections: 
+            prices.append(self.handle_one_section(section))
+
+        for type_of_office_prices in prices: 
+            if len(type_of_office_prices["time_periods"]) != len(type_of_office_prices["prices"]): 
+                errors.append(response.url)
+            
+
+            for i in range(0, len(type_of_office_prices["prices"])):
+                price = type_of_office_prices["prices"][i]
+                time_period = type_of_office_prices["time_periods"][i]
+
+                unique_row = row.copy()
+                unique_row["type of office"] = type_of_office_prices["type_of_price"] 
+                unique_row["price"] = price
+                unique_row["time period"] = time_period
+
+                output_rows.append(unique_row)
+                
+        return output_rows
 
 
-        start=(address[0].index("/i> ")+4)
-        end=address[0].index("</div>")
-        print('\n')
-        print('\n')
-        address_only=address[0][start:end:]
-        print(address_only)
-        print('\n')
-        print('\n')
-        row.append(address_only)
-        print(row)
-
-        po_day =""
-        po_week = ""
-        po_month = ""
-        po_year = ""
-        dd_day = ""
-        dd_week = ""
-        dd_month = ""
-        dd_year = ""
-        hd_day = ""
-        hd_week = ""
-        hd_month = ""
-        hd_year = ""
-
-        if "empty-message" not in sections[0]: 
-            if sections[0].find(Private Office)!=-1:
-                end=0
-                if end<len(sections[0]):
-                    start = sections[0].index('<option data-details='{"price":"')
-                    print(start)
-                    end= sections[0].index("</option>")
-                    print(end)
-                    subsec=sections[0][start:end:]
-
-                    po_day =
-
-                    po_week = 
-
-                    po_month =
-
-                    po_year = 
-
-        dd_day = 
-
-        dd_week = 
-
-        dd_month = 
-
-        dd_year = 
-
-        hd_day = 
-
-        hd_week = 
-
-        hd_month = 
-
-        hd_year = 
-
-        sections2=response.xpath('//div[@class="col-xs-12 pad_none pricing-section-space-outer-6-11-18"]')
-        print("hey")
-        prices=sections2.xpath('.//option[@data-details]').getall()
-        print(len(prices))
-        print("hello")
-        for i in range(len(prices)):
-            print('\n')
-            print(prices[i])
+  
         
-
-        # print(prices)
-
-        # for price in sections2.xpath('//div[@class="col-xs-12 pad_none pricing-section-space-outer-6-11-18"]'):
-        #     print("a")
-            # print('\n')
-            # print('\n')
-            # print(price.extract())
-            # print("b")
-            # print('\n')
-            # print('\n')
-            # print(price.xpath('.//option[@data-details]').get())
-            # print("c")
-            # print('\n')
-            # print('\n')
-        #     collected=price.xpath('//div[@class="col-xs-12 pad_none pricing-section-space-outer-6-11-18"]/h4') = price.xpath('//div[@class="col-xs-12 pad_none pricing-section-space-outer-6-11-18"]/options[@data-details]').getall()
-
-        # print('\n')
-        # print('\n')
-        # print(collected)
-        # print('\n')
-        # print('\n')
-
-        # sections = response.xpath('//div[@class="col-xs-12 pad_none pricing-section-space-outer-6-11-18"]')
-        # for price in sections.xpath('//div[@class="col-xs-12 pad_none pricing-section-space-outer-6-11-18"]'):
-        #     print('\n')
-        #     print('\n')
-        #     print(price.extract())
-        #     print(price.xpath('.//option[@data-details]').get())
-        #     print('\n')
-        #     print('\n')
-        #     collected[price.xpath('//div[@class="col-xs-12 pad_none pricing-section-space-outer-6-11-18"]/h4') = price.xpath('//div[@class="col-xs-12 pad_none pricing-section-space-outer-6-11-18"]/options[@data-details]')
-
-        # print('\n')
-        # print('\n')
-        # print(collected)
-        # print('\n')
-        # print('\n')
-
-        with open(filename, 'wb') as f:
-            f.write(response.body)
-        self.log('Saved file %s' % filename)
