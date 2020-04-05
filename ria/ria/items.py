@@ -12,8 +12,6 @@ headers = ["country", "city", "state", "name", "address", "joined", "type_of_off
 
 
 class DeskPricesRow(scrapy.Item):
-    # define the fields for your item here like:
-    # name = scrapy.Field()
     country = scrapy.Field()
     city = scrapy.Field()
     state = scrapy.Field()

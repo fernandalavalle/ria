@@ -30,8 +30,6 @@ class RiaPipeline(object):
         rows = item["rows"]
         errors = item["errors"]
 
-        print("I'M IN THE PIPELINES")
-
         for row in rows: 
             self.writer.writerow(row)
 

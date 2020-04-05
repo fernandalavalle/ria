@@ -1,5 +1,10 @@
 import scrapy
 import json
+import re
+import requests
+
+from scrapy.linkextractors import LinkExtractor
+
 from ria import items
 
 ERROR_FILE = "errors.txt"
@@ -9,12 +14,45 @@ headers = ["country", "city", "state", "name", "address", "joined", "type_of_off
 class DeskPriceSpider(scrapy.Spider):
     name = "desk_price"
 
+    allowed_domains = ['coworker.com']
+    countries = [("Brazil", "31"),("United+states", "231")]
+    request_headers = {
+        "x-requested-with" : "XMLHttpRequest", 
+        "content-type" : "application/x-www-form-urlencoded; charset=UTF-8", 
+    }
+    request_body = "ci_csrf_token=&pIdx={}&placeId={}&lvl=1&sfilter=all&splan=open&sammenities=&saccs=0&sapps=0&sdeposit=0&scapacity=0&scrypto=0&search={}&x_1=&x_2=&y_1=&y_2="
+
     def start_requests(self):
-        urls = [
-            'https://urldefense.proofpoint.com/v2/url?u=https-3A__www.coworker.com_united-2Dstates_massachusetts_boston_staples-2Dstudio&d=DwIGAg&c=P1Dci1wcau9HQxzdgeFbIQ&r=0u6hkQecOH0ct0Wg0xHRibYs5aF62OB8g9ssYaZsiu4&m=5zEjfI3ZD0nfuPZxs1dvmhS8-gwIJYjbmn1-wSxXXwE&s=OvQdjywtdBgmAslBNDiWAJMLwUXi5zUMVPVtiiEhdwE&e= ',
-        ]
-        for url in urls:
-            yield scrapy.Request(url=url, callback=self.parse)
+        request_batch = []
+        for country in DeskPriceSpider.countries: 
+            more_pages = True
+            pIdx = 0
+            while more_pages: 
+                response = requests.post("https://www.coworker.com/search/get_pagination", 
+                                            data=DeskPriceSpider.request_body.format(pIdx, country[1], country[0]), 
+                                            headers=DeskPriceSpider.request_headers)
+
+
+                for specific_place in response.json()["content"]: 
+                    relative_url = specific_place["s_url"]
+                    request_batch.append(scrapy.Request(url="https://www.coworker.com/" + relative_url, callback=self.parse_specific_page_response))
+
+                ((left, right), last_result) = self.parse_pagination(response.json()["sh"])
+                current_number_of_results = len(response.json()["content"])
+                pIdx+=1
+
+                if (int(right) + int(current_number_of_results) >= int(last_result)): 
+                    more_pages = False
+
+        print("length of requests")
+        print(len(request_batch))
+        return request_batch
+
+    def parse_pagination(self, pagination_string):
+        result_range = re.search(r"([-+]?\d+)-([-+]?\d+)", pagination_string).groups()
+        result_max = re.search(r"of ([-+]?\d+)", pagination_string).group(0).strip("of").strip()
+        return (result_range, result_max)
+
 
     def get_text(self, selector_string): 
         if not selector_string: 
@@ -39,21 +77,14 @@ class DeskPriceSpider(scrapy.Spider):
             "time_periods" : time_periods, 
             "prices" : prices
         }
+   
 
-
-    # Returns: (List of dictionary rows, errors)
-    def parse(self, response):
+    def parse_specific_page_response(self, response):
         output_rows = []
         errors = []
 
         row = {}
         page = response.url.split("/")
-        print('\n')
-        print('\n')        
-        print(page)
-        print('\n')
-        print('\n')
-
         
         row["name"] = page[-1]
         row["city"] = page[-2]
@@ -65,22 +96,24 @@ class DeskPriceSpider(scrapy.Spider):
             row["country"] = page[-3]
             row["state"] = ""
         
+        try: 
 
+            #  # Add address
+            address = response.xpath('//div[@class="col-xs-12 pade_none muchroom_mail"]').getall()
+            start=(address[0].index("/i> ")+4)
+            end=address[0].index("</div>")
+            address_only=address[0][start:end:]
+            row["address"] = address_only
 
-        # # Add address
-        address = response.xpath('//div[@class="col-xs-12 pade_none muchroom_mail"]').getall()
-        start=(address[0].index("/i> ")+4)
-        end=address[0].index("</div>")
-        address_only=address[0][start:end:]
-        row["address"] = address_only
+            # Add Join date
+            joined = response.xpath('//div[@class="date_joined_rs"]').getall()
+            start=(joined[0].index("Joined ")+7)
+            end=joined[0].index("</span>")
+            joined_only=joined[0][start:end:]
+            row["joined"] = joined_only
 
-        # Add Join date
-        joined = response.xpath('//div[@class="date_joined_rs"]').getall()
-        start=(joined[0].index("Joined ")+7)
-        end=joined[0].index("</span>")
-        joined_only=joined[0][start:end:]
-        row["joined"] = joined_only
-   
+        except IndexError:
+            pass
  
         sections=response.xpath('//div[@class="col-xs-12 pad_none pricing-section-space-outer-6-11-18"]')
 
