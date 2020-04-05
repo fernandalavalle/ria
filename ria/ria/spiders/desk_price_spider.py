@@ -1,9 +1,10 @@
 import scrapy
 import json
+from ria import items
 
 ERROR_FILE = "errors.txt"
 
-headers = ["country", "city", "state", "name", "address", "joined", "type of office", "price", "time period"]
+headers = ["country", "city", "state", "name", "address", "joined", "type_of_office", "price", "time_period"]
 
 class DeskPriceSpider(scrapy.Spider):
     name = "desk_price"
@@ -89,7 +90,7 @@ class DeskPriceSpider(scrapy.Spider):
 
         for type_of_office_prices in prices: 
             if len(type_of_office_prices["time_periods"]) != len(type_of_office_prices["prices"]): 
-                errors.append(response.url)
+                errors.append(items.DeskPricesError(url=response.url))
             
 
             for i in range(0, len(type_of_office_prices["prices"])):
@@ -97,13 +98,13 @@ class DeskPriceSpider(scrapy.Spider):
                 time_period = type_of_office_prices["time_periods"][i]
 
                 unique_row = row.copy()
-                unique_row["type of office"] = type_of_office_prices["type_of_price"] 
+                unique_row["type_of_office"] = type_of_office_prices["type_of_price"] 
                 unique_row["price"] = price
-                unique_row["time period"] = time_period
+                unique_row["time_period"] = time_period
 
-                output_rows.append(unique_row)
+                output_rows.append(items.DeskPricesRow(unique_row))
                 
-        return output_rows
+        return items.DeskPricesItem(rows=output_rows, errors=errors)
 
 
   

@@ -8,7 +8,26 @@
 import scrapy
 
 
-class RiaItem(scrapy.Item):
+headers = ["country", "city", "state", "name", "address", "joined", "type_of_office", "price", "time_period"]
+
+
+class DeskPricesRow(scrapy.Item):
     # define the fields for your item here like:
     # name = scrapy.Field()
-    pass
+    country = scrapy.Field()
+    city = scrapy.Field()
+    state = scrapy.Field()
+    name = scrapy.Field()
+    address = scrapy.Field()
+    joined = scrapy.Field()
+    type_of_office = scrapy.Field()
+    price = scrapy.Field()
+    time_period = scrapy.Field()
+    
+class DeskPricesError(scrapy.Item):
+    url = scrapy.Field()
+
+class DeskPricesItem(scrapy.Item):
+    rows = scrapy.Field()
+    errors = scrapy.Field()
+    
